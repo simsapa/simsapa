@@ -90,6 +90,10 @@ Every record is placed under the uids the app already uses.
   Pāli go. The MS and CST Pāli texts stay.
 - As a user who skipped Thai at first run, I add it later from the Sutta
   Languages window, by the checkbox or by selecting `th`.
+- As a Thai reader on 1.3 with `th` installed, I upgrade to the new database
+  release. The download window comes up with `th` and Thai Tipiṭaka ticked.
+  When it finishes I have the Royal, MCU, Mahamakut and Siam Rath texts, and no
+  `…/th/siam_rath` records.
 - As the maintainer, I read the alignment report after a bootstrap. I see per
   collection and per edition how many suttas were placed, how, and what was
   left out. I see a list of SuttaCentral `sya` references that disagree with
@@ -150,6 +154,7 @@ Every record is placed under the uids the app already uses.
 10. **Leave SuttaCentral's Royal texts out.** In `SuttaCentralImporter::import_for_language()` (`bootstrap_cli/src/bootstrap/suttacentral.rs`), skip the `siam_rath` texts when importing `th`. `suttas_lang_th` then keeps only Dhīranando and Jayasāro, and the bundle's Royal records are the only Royal copy.
     - Nothing is lost, because `th` always brings the bundle with it (§4.5).
     - Only `suttas_lang_th.tar.bz2` is changed. The other `suttas_lang_*` archives are built as before.
+    - **Saved references are not renamed.** A bookmark or other saved reference to a `…/th/siam_rath` uid does not resolve after the upgrade. This is accepted (the app is new, with few or no Thai users yet), so no rename mapping is made.
 11. **Mahamakut commentary uids** follow the CST aṭṭhakathā units, so the existing related-text rules find them:
     - **Find the unit.** For a mūla sutta, the unit is the `text_code` of its `att` row in `cst_commentaries` (`mn1` → `mn1.att`, `an1.5` → `an1.1-10.att`, `dhp23` → `dhp21-32.att`, `iti12` → `iti11-13.att`).
     - **Name the record.** The record is `<text_code>/th/mbu`. `related_text_lookup()` takes it as a candidate, "a translation of the commentary from another source" ([sutta-navigation-tree.md](../docs/sutta-navigation-tree.md), "The m | a | t buttons").
@@ -165,7 +170,10 @@ Every record is placed under the uids the app already uses.
 
       So from `mn1/th/royal`, `mn1.att/th/mbu` ranks 4, behind `mn1.att/pli/cst`, and the **a** button opens the Pāli commentary.
 
-      Add a tier between 0 and 1: the candidate's language and source belong to the **same bundle** as the opened record's (`th/royal`, `th/mcu`, `th/mbu` are one family). It reads the same table as removal (item 29). Nothing outside a bundle changes: `mn1/en/sujato` keeps opening `mn1.att/pli/cst`. From `mn1/pli/siam` the Pāli commentary still opens.
+      Add a tier between 0 and 1: the candidate has the **same language** as the opened record, and both sources belong to the **same bundle** (`th/royal`, `th/mcu`, `th/mbu` are one family). It reads the same table as removal (item 29).
+      - **Both conditions are needed.** The bundle also holds `pli/siam`. With the bundle condition alone, `mn1.att/th/mbu` would rank above `mn1.att/pli/cst` from `mn1/pli/siam`. With the language condition as well, from `mn1/pli/siam` the Pāli commentary still opens.
+      - Nothing outside a bundle changes: `mn1/en/sujato` keeps opening `mn1.att/pli/cst`, and `th/dhiranando` is not in the Thai family.
+      - The uid scheme alone already makes the Thai commentary a candidate. `related_sutta_uids_like_pattern()` matches by range group, and the commentary-table branch adds every candidate whose base is a `cst_commentaries` unit. Only the rank changes.
     - **Cut the sections.** Split the Mahamakut text at its commentary headings. Seen in the data: `อรรถกถา<title>สูตร`, `อรรถกถาสูตรที่ ๓`, `๒. อรรถกถา<title>ชาดก`, `อรรถกถา<title>สูตรเป็นต้น (๕-๑๐)` for a range, and the closing `จบอรรถกถา<title>`. Assign each section to its suttas by order and by the sutta number or title in the heading.
     - **Merge into units.** Concatenate, in order, the sections that fall in one CST unit into one record.
     - **Book and vagga introductions** (`อรรถกถาสังยุตตนิกาย นิทานวรรค`, `อรรถกถารูปาทิวรรคที่ ๑`) go at the start of the unit of the vagga's first sutta, as CST places them.
@@ -207,9 +215,12 @@ Every record is placed under the uids the app already uses.
 
 19. New module `bootstrap_cli/src/bootstrap/thai_tipitaka.rs`. It runs after the SuttaCentral languages step and writes `dist/.../suttas_bundle_thai_tipitaka.sqlite3`:
     - the database has the appdata schema, from `run_migrations`;
-    - it holds only the bundle's `suttas` rows.
+    - it holds only the bundle's `suttas` rows;
+    - it has **no FTS5 table**, like the `suttas_lang_*` databases: the app's insert trigger builds the trigram index on import, so a `suttas_fts` table in the archive would be dead weight.
 
     It is selected when `--skip-languages` is not given, by `--only-languages th`, and by a new `--only-bundles thai_tipitaka`. `--only-languages th` builds both `suttas_lang_th` and the bundle, since the app always fetches them together.
+    - **Guard `--only-bundles` on its own.** If the `suttas_lang_th` in dist still holds `source_uid = 'siam_rath'` rows (built before item 10), the release would carry the Royal translation twice. The step checks that database and stops with a message to rebuild `th` as well.
+    - `languages.json` is copied into `assets/` on a full run only (item 22). After a partial run, the maintainer runs the full bootstrap before an app release build.
 20. **Indexes.** Build the bundle's fulltext indexes into their own folders, `index/suttas/th.thai_tipitaka/` and `index/suttas/pli.thai_tipitaka/` (§4.6, item 31). Each takes only the bundle's rows of that language.
     - The Thai translations cannot share `index/suttas/th/`, because that folder ships in `suttas_lang_th.tar.bz2`, built from the SuttaCentral Thai texts only.
     - The Siam Rath Pāli cannot share `index/suttas/pli/`, which ships in the general `index.tar.bz2`.
@@ -218,12 +229,14 @@ Every record is placed under the uids the app already uses.
     - **Where the app's language list comes from.** It is not read from the release at run time. It is `assets/languages.json`, embedded by `include_str!` as `LANGUAGES_JSON` (`backend/src/app_settings.rs`), and read by `get_available_languages()` (`bridges/src/asset_manager.rs`) and by `setup.rs`. The bootstrap copies it into `assets/` on a full run only.
     - **So the bundle goes in the same file.** `write_release_info()` writes the `th` entry with a `bundle` object:
       ```json
-      {"code": "th", "name": "ไทย", "sutta_count": 3239,
+      {"code": "th", "name": "ไทย", "sutta_count": 5,
        "bundle": {"code": "thai_tipitaka", "title": "Thai Tipiṭaka",
                   "archive_bytes": 0, "installed_bytes": 0,
                   "counts": {"siam": 0, "royal": 0, "mcu": 0, "mbu": 0}}}
       ```
-      `sutta_count` stays the `suttas_lang_th` count, and the list shows the bundle's counts beside it.
+      `sutta_count` stays the `suttas_lang_th` count, which is about 5 once item 10 moves the Royal texts out. So the language lists must show the bundle's counts beside it, or Thai looks nearly empty.
+    - **Sizes are measured before the folders are cleaned up.** `write_release_info()` runs after `cleanup_language_index_dir()` has deleted the index folders. So the bundle step records the folder sizes in a sidecar file beside the bundle database (`suttas_bundle_thai_tipitaka.sizes.json`), which `write_release_info()` reads.
+      - `installed_bytes` is the database size, plus the index folders, plus the trigram growth estimated from the measured ratio.
     - **No runtime `bundles.json`.** The checkbox is shown when the compiled entry has a `bundle`, as a language is listed when the compiled list has it.
     - **The parsers must still accept the old entry shape:** `get_available_languages()` keeps its `code|name|count` output and reads the bundle separately; `setup.rs` likewise.
     - `release_info.toml` gets `suttas_bundles = ["thai_tipitaka"]` for the record. `update_checker.rs` parses releases with `suttas_lang` and must ignore the new key, or read it with `#[serde(default)]`; check this with the `releases-fallback.json` tests ([releases-info-and-fallback.md](../docs/releases-info-and-fallback.md)).
@@ -255,22 +268,30 @@ Every record is placed under the uids the app already uses.
     The new code must not `canonicalize()` the import path (standing rule). `import_suttas_from_db()` does today; fix it there, since the bundle goes through it.
 
     **Rewrite the copy in `import_suttas_from_db()`.** Today it loads every row of the import database into one `Vec<Sutta>` and then deletes and inserts row by row, without a transaction. That is fine for a language of a few thousand texts. The bundle has about 30,000 records and about 400 MB of `content_html` + `content_plain`, which would all be in memory at once, more than an Android device can spare. Instead:
-    1. `ATTACH` the import database. Use a URI from `normalize_path_for_sqlite()` without `canonicalize()`; a `content://` path is never involved, because the archive was extracted to the app's own temp folder.
+    1. `ATTACH` the import database, with the path from `normalize_path_for_sqlite()` bound as a plain path parameter (`ATTACH ? AS imp`), without `canonicalize()`.
+       - Not a `file:` URI: Diesel opens with `SQLITE_OPEN_URI`, but a URI needs `?`, `#` and `%` in the path escaped.
+       - A `content://` path is never involved, because the archive was extracted to the app's own temp folder.
     2. Run `DELETE FROM suttas WHERE uid IN (SELECT uid FROM imp.suttas)`.
     3. Run `INSERT INTO suttas (<columns, no id>) SELECT <columns> FROM imp.suttas`.
     4. `COMMIT`, then `DETACH`.
 
     All four steps run in one transaction. The FTS5 triggers index the rows as they are inserted. The range columns come filled from the bootstrap (item 6). Keep the fallback `sutta_range_from_ref()` only for an older `suttas_lang_*` archive whose range columns are NULL, in a second `UPDATE` pass over those rows. The language archives use the same code, so test it with one of them.
     - **Measured trigram cost:** the dist appdata has 333 MB of `content_plain` and a 39 MB `suttas_fts_data`. The trigram index adds roughly a tenth of the text. The installed size is dominated by the text itself (§7.1).
+    - **Peak disk use.** For a moment the archive, the extracted database and indexes, the journal of the one transaction, and the grown appdata are all on disk.
+      - Measure this peak in the first bootstrap's import test.
+      - When it is well above `installed_bytes`, the mobile warning shows the peak free space needed.
+    - **Clear an index folder before moving a new one in.** `move_folder_contents()` merges into an existing folder file by file. A re-download would leave the old Tantivy segment files orphaned beside the new `meta.json`. Remove the target `index/suttas/<folder>/` first, for bundles and languages alike; languages have this gap today.
     - **No searcher reinit.** A language download already ends on a **Quit** screen in both windows, and the new index folders are opened at the next start. The bundle follows the same flow. Calling `reinit_fulltext_searcher()` here would be a new behaviour; the language downloads do not call it today.
 26. **`simsapa setup`** (`backend_cli/src/setup.rs`) is the second implementation of this download: change both together.
     - `--languages th` (and the interactive language question) also fetches the bundle, from the same `languages.json` link.
     - No separate bundle flag is needed. The interactive flow mentions the Thai Tipiṭaka when `th` is chosen.
     - Update [backend-cli-and-npm-package.md](../docs/backend-cli-and-npm-package.md) and the self-contained [simsapa-cli-and-localhost-api.md](../docs/simsapa-cli-and-localhost-api.md), which takes no links or source paths.
-27. **Upgrade and asset removal.** No new marker file is needed, because `th` implies the bundle.
-    - `export_download_languages()` already writes `th` to `download_languages.txt` when Thai records exist. Check that `get_sutta_languages()` sees `th` when only bundle records are present (the user installed the bundle, then removed nothing).
-    - The download window and `simsapa setup` pre-select `th` from that file, and with it the bundle (item 23).
-    - A user upgrading from a release where `th` had no bundle gets it at the next download. This is intended.
+27. **Upgrade and asset removal.** No new marker file is needed, because `th` implies the bundle. (The existing `download_select_sanskrit_bundle.txt` is written but read nowhere; it is not a precedent.)
+    - **No sutta text is carried across a database upgrade.** `export_user_data_to_assets()` (`backend/src/app_data.rs`) exports settings, `download_languages.txt`, user books, bookmarks, gloss and prompts history, chanting data and user dictionaries, but no `suttas` rows. Thai texts come back only by a new download from the new release.
+    - The export runs in the new app: it finds the old database obsolete (`is_local_db_obsolete()`), exports, and opens the download window with `download_languages.txt` pre-filled. `simsapa setup` / `backend_cli/src/db_upgrade.rs` is the second path.
+    - `export_download_languages()` writes `th` when Thai records exist. Check that `get_sutta_languages()` sees `th` when only bundle records are present (the user installed the bundle, then removed nothing).
+    - The download window and `simsapa setup` pre-select `th` from that file, and with it the bundle (item 23). They fetch the new `suttas_lang_th` and the bundle. The old SuttaCentral `siam_rath` copy is not restored, because the new `suttas_lang_th` no longer holds it (item 10).
+    - This holds both for a user who had `th` without a bundle (every user of a release before this one) and for a user who had both. The first gets the bundle at the upgrade download. This is intended.
 28. **Sutta Languages window** (`SuttaLanguagesWindow.qml`). Above the "Download Languages" selector, add a **Thai Tipiṭaka** checkbox, with the same description and size as in the download window. It is synced with the selector by the shared helper (item 23). "Download Selected Languages" fetches both archives for `th`.
     - **Remove section.** The window also shows a **"Remove Thai Tipiṭaka"** checkbox in the *Remove Languages* section, synced with `th` in the remove selector by the same helper.
       - It has the selector's polarity: ticked means "to be removed", as a selected code there does.
@@ -285,8 +306,19 @@ Every record is placed under the uids the app already uses.
 
     **The marker check rejects these names today.** `check_remove_lang_index_dirs()` (`backend/src/lib.rs`) accepts a line only if every character is ASCII alphanumeric, `-` or `_`, so that a corrupted marker cannot name a path outside `index/suttas/`. A `.` fails it. Extend the check to accept `<code>` or `<code>.<bundle>`, each part non-empty `[A-Za-z0-9_-]+`, which still rules out `..` and `/`. Add a test that `../x` and `th..x` are still refused.
 
+    **Reclaim the space at the next start (§8 Q9, settled).** A deletion leaves the rows in `appdata.sqlite3` as free pages, about 400 MB for the bundle, so removal alone frees no disk space. Languages and bundles alike:
+    - `remove_sutta_languages()` writes a marker, `vacuum_appdata.txt`, when it deleted any rows. Its path goes in `AppGlobalPaths` beside `remove_lang_index_dirs_marker`.
+    - At the next start, `check_vacuum_appdata()` runs in `cpp/gui.cpp` right after `check_remove_lang_index_dirs()`: in the same storage-reachable branch and before any database connection or searcher is opened.
+      - It checks the free space on the volume of `appdata.sqlite3` with `fs4::statvfs()`, as `import_staging.rs` does. `VACUUM` needs about the database size in temporary free space (SQLite builds a temporary copy).
+      - With room for it, it runs `VACUUM` and then deletes the marker.
+      - With too little room, or when `VACUUM` fails, it logs the reason and keeps the marker, and the next start tries again. The database is never left half done: SQLite's `VACUUM` is transactional.
+    - **Startup cost.** On a 1.1 GB database a `VACUUM` can take tens of seconds on a phone, and it happens before the window shows. Bracket it with `STARTUP-TRACE` logs and measure it on a device. If it is too slow, show a "Freeing disk space…" message during it, or move it to the end of the removal job, before the Quit screen.
+    - Add a row to the table in [user-data-and-sqlite-analyze.md](../docs/user-data-and-sqlite-analyze.md). `VACUUM` keeps the `sqlite_stat*` tables, so no `ANALYZE` is needed after it.
+
     The link between language and bundle (sources and index folders) is read from one table in the backend, not repeated in QML. Removing `th` must not touch any `/pli/ms` or `/pli/cst` row; test it. The "Remove Thai Tipiṭaka" checkbox and `th` in the remove selector lead to this one removal.
-30. Follow the window rules: `onActivated` for any ComboBox, the `Dialog` width clamp and `DialogHeader`, and `AssetManager.set_keep_screen_on("thai_tipitaka_download", …)` around the download and import, released in the completion handler.
+30. Follow the window rules: `onActivated` for any ComboBox, and the `Dialog` width clamp and `DialogHeader`.
+    - **Keep the screen awake.** `DownloadAppdataWindow.qml` already brackets its downloads with its own `"download-appdata-window"` holder, which covers the bundle; add no second holder there.
+    - Where the Sutta Languages window's download and import are not covered by a holder, bracket them with `set_keep_screen_on("sutta-languages-download", …)`, in the hyphenated style of the existing names, released in the completion handler.
 
 ### 4.6 Thai fulltext search
 
@@ -309,19 +341,33 @@ Every record is placed under the uids the app already uses.
     - **Alternatives:**
       - `nlpo3` (PyThaiNLP's newmm in Rust; needs its dictionary file);
       - `charabia`, Meilisearch's tokenizer, which has a Thai segmenter and is used in a search engine.
-    - **Pin the segmenter and its data.** The query is segmented at search time with the code in the app, and the index was segmented in the bootstrap. A new data version can split words differently and silently lose hits. So an upgrade of the segmenter crate or its data is treated like a tokenizer change (item 35): it ships with a database release and rebuilt Thai indexes.
+    - **Versioned analyzer names.** The query is segmented at search time with the code in the app, and the index was segmented in the bootstrap. A new data version can split words differently and silently lose hits. Each index parses queries with the analyzers its own schema names (`QueryParser::for_index()` and `SnippetGenerator::create()` read the field's tokenizer name from the index schema). So:
+      - register the segmenter under versioned names: `th_seg1_stem`, `th_seg1_normalize`, `th_seg1_fold`;
+      - `build_sutta_schema()` (`backend/src/search/schema.rs`) takes the analyzer set from a per-language mapping, not from `format!("{lang}_stem")`;
+      - **never change the analyzer behind an existing name.** A new segmenter, or new segmenter data, gets new names (`th_seg2_*`). The app keeps registering `th_seg1_*`, so indexes built earlier keep matching until a database release rebuilds them;
+      - pin the segmenter crate and its data feature with `=x.y.z` in `Cargo.toml`, so `cargo update` cannot move it.
+    - **Keep the old names registered.** The app keeps registering the legacy `th_stem` / `th_normalize` unchanged. An index opened before the database release that rebuilds it still names them, such as the 1.3 `th` sutta index. So does a dictionary or library index a user built for `th` in the app.
+    - **Only the sutta schema moves to the mapping.** `build_dict_schema()` and `build_library_schema()` keep `{lang}_*`. Moving them would change user-built indexes and is a separate decision.
+    - **Every place that names an analyzer reads it from the index schema.** Today `enumerate_match_ranges()` (the snippet highlight ranges) and the searcher's debug report build `format!("{lang}_stem")`. That fails for a versioned name and for a `<lang>.<bundle>` folder key. They read the tokenizer name from the field's indexing options in `index.schema()` instead.
     - Tantivy's `QueryParser` turns a query term that segments into several tokens into a phrase query. The `content` fields are indexed `WithFreqsAndPositions` (`schema.rs`), so a phrase works without a schema change.
-    - No stemming, but keep `RemoveLongFilter` and lowercasing for any Latin text in Thai records.
+    - No stemming. Keep lowercasing for any Latin text in Thai records.
+    - **`RemoveLongFilter` counts bytes, not characters.** Tantivy's documentation says it removes tokens "longer than a given number of bytes (in UTF-8 representation)". Thai is 3 bytes a character, so the current `limit(50)` drops every Thai token over 16 characters. The Thai analyzers use a limit sized for Thai script (about 150 bytes).
+    - `icu_segmenter` 2.4.0: `WordSegmenter::new_dictionary` / `new_lstm` / `new_auto` take `WordBreakInvariantOptions` and return `WordSegmenterBorrowed<'static>`. The default features are `auto` (which enables `lstm`) and `compiled_data`.
+      - Measure the binary size with `default-features = false`, plus `compiled_data` for the dictionary model, or plus `lstm` for the LSTM model.
+      - The baked data covers every complex script, so the dictionary build also carries the Chinese/Japanese dictionary. A Thai-only data build with `icu4x-datagen` is the fallback if it is too large.
     - The choice is made by the planned test in item 34, not before.
-33. **Siam Rath Pāli** (`pli.thai_tipitaka`) is space-separated and keeps the `pli` tokenizers.
-    - Check that `NiggahitaNormalizer`, `AsciiFoldingFilter` and the Pāli stemmer leave Thai-script tokens intact. Thai `ํ` (niggahita) and `ฺ` (pinthu) must stay in the token.
-    - If they do not, give the folder a Thai-script Pāli analyzer without the stemmer.
+33. **Siam Rath Pāli** (`pli.thai_tipitaka`) is space-separated, so `SimpleTokenizer` can split it, but it **gets its own analyzer set**, `pli_thai1_stem` / `pli_thai1_normalize`. `pli_stem` is never changed.
+    - **Why it cannot keep `pli_stem`:** that analyzer's `RemoveLongFilter(50)` counts bytes (item 32), so it drops every Thai-script token over 16 characters. Long compounds would disappear from the index; `ปฏิจฺจสมุปฺปาทปจฺจยาการวิภงฺค` has 29 characters, which is 87 bytes.
+    - **Pipeline:** `SimpleTokenizer` → `RemoveLongFilter` with a Thai-sized byte limit → `LowerCaser`. No Niggahita normalizer, ASCII folding or Pāli stemmer, because they do nothing on Thai script.
+    - **Measured during review:** `SimpleTokenizer` splits on `!char::is_alphanumeric()`. `ฺ` (U+0E3A), `ํ` (U+0E4D) and the vowel signs are alphanumeric, so they stay in the token.
+      - The Thai tone marks `่` `็` `์` are not alphanumeric, so `SimpleTokenizer` also breaks Thai translation text at them. That is one more reason the Thai translations need the segmenter.
+      - It does no harm for Siam Rath Pāli, which has no tone marks.
 34. **Planned test, written down here and not run during PRD authoring.** Before choosing the segmenter, index 200 Royal suttas with each candidate and run the query list in the feature doc: common terms, compounds such as `ปฏิจจสมุปบาท`, names, and words that segmentation could split wrongly. Measure:
     - hits and missed hits against Contains Match (FTS5 trigram) as the reference;
     - snippet highlight boundaries;
     - index size and build time;
     - the Android binary size added by the segmenter's data.
-35. **The SuttaCentral `th` index uses the same tokenizer.** Rebuilding it happens at the next re-bootstrap. A changed Thai tokenizer means a Thai index built by an older release no longer matches the query analysis, so this ships with a database release (the maintainer sets the version).
+35. **The SuttaCentral `th` index uses the same tokenizer.** Rebuilding it happens at the next re-bootstrap. The first Thai segmenter ships with this database release (the maintainer sets the version), which rebuilds every Thai index. A later segmenter change gets new analyzer names (item 32) and does not need a database release.
 36. Contains Match (FTS5 trigram on `content_plain`) already works for Thai and needs no change. Check it with a Thai query in the test list.
 
 ### 4.7 Pāli lookups from Thai-script Pāli
@@ -347,6 +393,7 @@ Every record is placed under the uids the app already uses.
 ### 4.8 Reading
 
 41. The translations list (`/translations_for_sutta`) and the column bar offer the bundle's records with the existing labels. Example: "royal (th)", "mbu (th, comm)", "Pāli (siam)". Check `text_kind_label()` and `sort_translations()` with the new sources; `siam` sorts after `ms` and `cst`.
+    - The Thai commentary is listed only when "Commentaries in Translations" is ticked (item 46b), which is off by default. The **a** button opens it either way: it goes through `related_text_lookup()`, which does not read that setting.
 42. `siam` records are Pāli records in another script. Wherever code assumes a Pāli record is in Roman script, exclude `siam` explicitly through one helper (`is_thai_script_pali_uid()`). Known places:
     - `default_english_for_pali` (a `siam` text takes `<base>/th/royal` as its default column);
     - Repeat-Pāli column arrangement;
@@ -377,6 +424,11 @@ Every record is placed under the uids the app already uses.
       - with preference MS, which would hide the `siam` twins, a Thai-script query, which matches only `siam` records, would return nothing;
       - with a Siam Rath preference, which would hide the `ms` / `cst` twins, a Roman query would return nothing.
     - **Nothing to deduplicate anyway.** A `siam` record and its `ms` / `cst` twin are never found by the same query.
+46b. **The commentary options cover every commentary (§8 Q10, settled).** `filter_out_commentary()` matches the uid (`%.att%` / `%.tik%`), and Tantivy's `is_commentary` field is computed from the uid, whatever the source. `related_sutta_uids()` likewise filters the translations list by text kind. So both options already apply to `…att/th/mbu` and the other non-CST commentaries (`dhp<range>.att/en/anandajoti`, `ja<N>.att/en/anandajoti`). Keep that behaviour and make the labels say so:
+    - "CST Commentaries in Search" becomes **"Commentaries in Search"**;
+    - "CST Commentary in Translations" becomes **"Commentaries in Translations"**, and its info dialog text is updated to match.
+
+    Only the labels and help text change. The stored settings (`include_cst_commentary_in_search_results`, `include_cst_commentary_in_translations`), the bridge functions, the filter field `include_cst_commentary` and the localhost API keep their names, so saved settings carry over.
 47. **Language filter.** The search language dropdown does not change. `pli` covers the `pli` and `pli.thai_tipitaka` index folders, and `th` covers `th` and `th.thai_tipitaka` (item 31). Contains Match filters on the record's `language`, so both search modes agree.
 
 ### 4.9 Tests and documentation
@@ -390,7 +442,14 @@ Every record is placed under the uids the app already uses.
     - removing `th` removes the bundle's Thai and `siam` rows and lists the three index folders, and leaves `/pli/ms` and `/pli/cst` rows;
     - the language selection and the checkbox give the same URL list (a QML test of the shared helper), in both directions and after unticking;
     - the Siam Rath checkbox: unchecked hides `siam` records in Fulltext, Contains and Title search;
-    - a Thai-script query finds `siam` records under every `pali_edition` preference (MS, CST, Both), which guards item 46.
+    - a Thai-script query finds `siam` records under every `pali_edition` preference (MS, CST, Both), which guards item 46;
+    - two indexes whose schemas name different analyzer sets (`th_seg1_*` and a test-only second set) are each searched correctly by one searcher (item 32);
+    - a Thai token and a Siam Rath token over 16 characters (more than 50 bytes) are indexed, not dropped; `ฺ` and `ํ` stay in Siam Rath tokens (items 32–33);
+    - snippet highlight ranges on a `th_seg1_*` index, and an index naming the legacy `th_stem` still opens and searches (item 32);
+    - `--only-bundles thai_tipitaka` stops when the dist `suttas_lang_th` still holds `siam_rath` rows (item 19);
+    - removal writes `vacuum_appdata.txt`; `check_vacuum_appdata()` runs `VACUUM` and deletes the marker, and keeps the marker when the free-space check fails (item 29; on a temp copy of a database, never the dist one);
+    - unticking "Commentaries in Search" hides `…att/th/mbu` records in Fulltext, Contains and Title search (item 46b);
+    - the upgrade path (item 27): `export_download_languages()` writes `th` when only bundle rows are present and when only SuttaCentral `th` rows are present; the shared QML helper builds both URLs from a pre-filled `th`; `db_upgrade.rs` / `setup.rs` do the same from the marker file.
 
     Fixtures written to the dist database use `dummy-` uids and delete exactly what they insert.
 49. **Docs:**
@@ -451,3 +510,5 @@ Every record is placed under the uids the app already uses.
 6. **Repeat-Pāli column default for a Thai reader.** On `mn1/th/royal`, should the default Pāli column be `mn1/pli/siam` (Thai script) or `mn1/pli/ms`? The proposal is `siam` when the bundle is installed.
 7. **Reporting upstream.** Where do the SuttaCentral `sya` disagreements go: an issue on `suttacentral/sc-data`, or a message to the maintainers? The report format may follow that.
 8. ~~Edition dropdown and `siam` twins.~~ Settled in review: Siam Rath gets its own checkbox only. The dropdown, `PaliEditionPreference`, the API's `pali_edition` values and `pali_edition_twins` are unchanged, and a `siam` record is never a twin (items 45–46).
+9. ~~Reclaiming space after removal.~~ Settled in review: `VACUUM` at the next start, behind a marker and a free-space check (item 29).
+10. ~~The commentary search option.~~ Settled in review: both commentary options cover every commentary, the Thai one included, and are relabelled "Commentaries in Search" / "Commentaries in Translations" (item 46b).
